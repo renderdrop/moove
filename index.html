@@ -114,6 +114,9 @@ section.block{margin-top:22px}
 .bhead .cnt{font-family:var(--mono);font-size:10px;color:var(--faint)}
 .bsub{color:var(--faint);font-size:12px;margin:-5px 0 9px 37px}
 
+.viewtop{display:flex;gap:10px;align-items:flex-start;margin:14px 0 2px}
+.viewtop .chips{margin:0;flex:1;min-width:0}
+.viewtop .btn{flex:none}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 2px}
 .chip{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:7px 14px;
   font-size:13px;color:var(--ink2);cursor:pointer;white-space:nowrap;box-shadow:var(--sh)}
@@ -223,9 +226,9 @@ li.item.drop .thumb,li.item.drop .right{opacity:.4}
 
 .fld{margin-bottom:15px}
 .fld>span{display:block;font-size:11.5px;font-weight:600;color:var(--ink3);margin-bottom:6px;letter-spacing:.01em}
-.fld input[type=text],.fld input[type=number],.fld input[type=date],.fld select,.fld textarea{
+.fld input:not([type=file]),.fld select,.fld textarea{
   width:100%;border:1px solid var(--line);border-radius:11px;padding:12px 13px;background:var(--surface);
-  font-size:16px;box-shadow:var(--sh)}
+  font-size:16px;box-shadow:var(--sh);-webkit-appearance:none;appearance:none}
 .fld textarea{min-height:76px;resize:vertical;line-height:1.45;font-size:15px}
 .fld input:focus,.fld select:focus,.fld textarea:focus{outline:2px solid var(--accent);
   outline-offset:-1px;border-color:transparent}
@@ -329,10 +332,20 @@ table.tot tr.big td{border-top:1.5px solid var(--ink);border-bottom:none;padding
 .logrow.undone{opacity:.45}
 
 /* ---------- Anmeldung ---------- */
-#gate{max-width:390px;margin:8vh auto}
-#gate .brandbig{font-size:42px;font-weight:700;letter-spacing:-.045em;text-align:center;margin-bottom:6px}
+body.out{padding-bottom:0}
+#gate{min-height:100svh;display:flex;align-items:center;justify-content:center;
+  padding:32px 0 calc(32px + env(safe-area-inset-bottom))}
+.gatebox{width:100%;max-width:370px}
+#gate .brandbig{font-size:46px;font-weight:700;letter-spacing:-.05em;text-align:center;
+  margin-bottom:8px;line-height:1}
 #gate .brandbig span{color:var(--accent)}
-#gate .claim{text-align:center;color:var(--ink3);font-size:13.5px;margin-bottom:22px}
+#gate .claim{text-align:center;color:var(--ink3);font-size:14px;margin-bottom:26px}
+#gate .card{padding:22px 20px;border-radius:18px;margin-top:0}
+#gate .fld{margin-bottom:16px}
+#gate .fld>span{font-size:12px}
+#gate .btn.pri{padding:14px;font-size:15px;border-radius:12px;font-weight:500}
+#gate .gatefoot{text-align:center;color:var(--faint);font-size:12px;margin-top:20px;line-height:1.6}
+#gate .gatefoot b{color:var(--ink3);font-weight:500}
 
 /* ================= DESKTOP ================= */
 @media (min-width:761px){
@@ -391,20 +404,26 @@ table.tot tr.big td{border-top:1.5px solid var(--ink);border-bottom:none;padding
 
 <!-- ================= ANMELDUNG ================= -->
 <div id="gate" hidden>
+ <div class="gatebox">
   <div class="brandbig">m<span>oo</span>ve</div>
   <p class="claim">Umzugsplaner für Dijana &amp; Tobi</p>
   <div class="card">
-    <div class="fld"><span>E-Mail</span><input id="au-mail" type="text" autocomplete="username" inputmode="email"></div>
-    <div class="fld"><span>Passwort</span><input id="au-pass" type="password" autocomplete="current-password"></div>
+    <div class="fld"><span>E-Mail</span>
+      <input id="au-mail" type="email" name="email" autocomplete="username" inputmode="email"
+        autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="name@mail.de"></div>
+    <div class="fld"><span>Passwort</span>
+      <input id="au-pass" type="password" name="password" autocomplete="current-password" placeholder="••••••••"></div>
     <button class="btn pri full" id="au-in">Anmelden</button>
-    <p id="au-msg" style="margin-top:12px;font-size:12.5px;color:var(--ink3)"></p>
+    <p id="au-msg" style="margin-top:12px;font-size:12.5px;color:var(--ink3);text-align:center"></p>
   </div>
   <div class="card" id="au-cfgcard" hidden>
     <span class="label">Projektzugang</span>
-    <div class="fld" style="margin-top:10px"><span>Projekt-URL</span><input id="au-url" type="text"></div>
+    <div class="fld" style="margin-top:12px"><span>Projekt-URL</span><input id="au-url" type="text"></div>
     <div class="fld"><span>Anon Key</span><input id="au-key" type="text"></div>
     <button class="btn sm" id="au-cfg-save">Speichern</button>
   </div>
+  <p class="gatefoot">Änderungen erscheinen <b>sofort</b> auf allen Geräten.</p>
+ </div>
 </div>
 
 <!-- ================= APP ================= -->
@@ -428,6 +447,8 @@ table.tot tr.big td{border-top:1.5px solid var(--ink);border-bottom:none;padding
 
 <div class="wrap">
   <div class="view" id="v-cal">
+    <div class="viewtop"><span style="flex:1"></span>
+      <button class="btn pri sm" id="add-event">Termin</button></div>
     <div class="calwrap">
       <div>
         <div class="card">
@@ -454,21 +475,20 @@ table.tot tr.big td{border-top:1.5px solid var(--ink);border-bottom:none;padding
         <div id="cal-day"></div>
         <div id="cal-next7"></div>
         <div id="cal-events"></div>
-        <div class="btnrow"><button class="btn sm" id="add-event">Termin hinzufügen</button></div>
       </div>
     </div>
   </div>
 
   <div class="view" id="v-task" hidden>
-    <div class="chips" id="task-filters"></div>
+    <div class="viewtop"><div class="chips" id="task-filters"></div>
+      <button class="btn pri sm" id="add-task">Aufgabe</button></div>
     <div id="task-list"></div>
-    <div class="btnrow"><button class="btn sm" id="add-task">Aufgabe hinzufügen</button></div>
   </div>
 
   <div class="view" id="v-room" hidden>
-    <div class="chips" id="room-filters"></div>
+    <div class="viewtop"><div class="chips" id="room-filters"></div>
+      <button class="btn pri sm" id="add-buy">Position</button></div>
     <div id="room-list" class="roomgrid"></div>
-    <div class="btnrow"><button class="btn sm" id="add-buy">Position hinzufügen</button></div>
   </div>
 
   <div class="view" id="v-shop" hidden>
@@ -477,12 +497,13 @@ table.tot tr.big td{border-top:1.5px solid var(--ink);border-bottom:none;padding
   </div>
 
   <div class="view" id="v-cost" hidden>
+    <div class="viewtop"><span style="flex:1"></span>
+      <button class="btn pri sm" id="add-spend">Ausgabe</button></div>
     <div class="kpis" id="cost-kpis"></div>
     <div class="card"><span class="label">Aufstellung</span><table class="tot" id="cost-table"></table></div>
     <div class="card">
       <span class="label">Bezahlt</span>
       <div id="cost-paid" style="margin-top:10px"></div>
-      <div class="btnrow"><button class="btn sm" id="add-spend">Ausgabe hinzufügen</button></div>
       <div class="settle" id="settle">Noch keine Ausgabe erfasst.</div>
     </div>
   </div>
@@ -1613,7 +1634,10 @@ function dirty(){ return LAST!==null && JSON.stringify(DATA)!==LAST; }
 function hhmm(d){ d=d?new Date(d):new Date();
   return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }
 function shortMail(m){ return m?String(m).split("@")[0]:"unbekannt"; }
-function gate(on){ $("gate").hidden=on; $("app").hidden=!on; }
+function gate(on){
+  $("gate").hidden=on; $("app").hidden=!on;
+  if(document.body && document.body.classList) document.body.classList.toggle("out", !on);
+}
 function makeClient(){
   if(!SUPA_URL||!SUPA_KEY||SUPA_KEY.indexOf("HIER_")===0) return false;
   if(!window.supabase){ amsg("Supabase-Bibliothek nicht geladen — Internetverbindung prüfen.",true); return false; }
