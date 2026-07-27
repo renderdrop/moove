@@ -45,8 +45,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 
 /* ---------- Kopf ---------- */
-header{position:sticky;top:0;z-index:30;background:rgba(245,244,240,.94);
-  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+header{position:sticky;top:0;z-index:30;background:var(--bg);
   margin:0 -16px;padding:11px 16px 0;border-bottom:1px solid var(--line)}
 .hrow{display:flex;align-items:center;gap:9px;max-width:var(--w);margin:0 auto}
 .brand{font-size:19px;font-weight:700;letter-spacing:-.035em;line-height:1.1}
@@ -436,7 +435,7 @@ table.tot tr.big td{border-top:1.5px solid var(--ink);border-bottom:none;padding
           <div class="bar"><i id="cnt-bar" style="width:0"></i></div>
           <p class="muted" id="cnt-sub" style="font-size:12.5px;margin-top:8px"></p>
         </div>
-        <div class="card">
+        <div class="card cal">
           <div class="calhead">
             <button class="iconbtn" id="cal-prev" aria-label="Monat zurück"></button>
             <h3 id="cal-title">–</h3>
@@ -450,12 +449,12 @@ table.tot tr.big td{border-top:1.5px solid var(--ink);border-bottom:none;padding
             <span><i class="p-eta"></i>Lieferung</span><span><i class="p-ev"></i>Termin</span>
           </div>
         </div>
-        <div id="cal-events"></div>
       </div>
       <div>
         <div id="cal-day"></div>
-        <div class="btnrow"><button class="btn sm" id="add-event">Termin hinzufügen</button></div>
         <div id="cal-next7"></div>
+        <div id="cal-events"></div>
+        <div class="btnrow"><button class="btn sm" id="add-event">Termin hinzufügen</button></div>
       </div>
     </div>
   </div>
@@ -550,7 +549,7 @@ table.tot tr.big td{border-top:1.5px solid var(--ink);border-bottom:none;padding
    SUPABASE — hier eintragen
    ======================================================================= */
 var SUPA_URL = "https://upzausewdoeadldfuyav.supabase.co";
-var SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVwemF1c2V3ZG9lYWRsZGZ1eWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNzMyNzcsImV4cCI6MjEwMDc0OTI3N30.Ok3X035Cs2lG0XR-fCaGLLN4pIP2ieD6XKhkuXaYjLo";
+var SUPA_KEY = "HIER_ANON_KEY_EINFUEGEN";
 var ROW_ID   = "umzug";
 /* ===================================================================== */
 
@@ -847,13 +846,15 @@ function renderCal(){
     list.length ? '<ul class="list">'+list.map(agendaRow).join("")+'</ul>'
                 : '<div class="card">'+empty("cal","Für diesen Tag ist nichts eingetragen.")+'</div>');
 
-  var soon=[], cur=fromISO(t0);
-  for(var k=0;k<14;k++){
+  var soon=[], cur=fromISO(t0), total=0;
+  cur.setDate(cur.getDate()+1);
+  for(var k=0;k<7;k++){
     var iso2=isoOf(cur), l2=AG[iso2]||[];
-    if(iso2!==sel && l2.length) soon.push({iso:iso2,list:l2});
+    if(iso2!==sel && l2.length){ soon.push({iso:iso2,list:l2}); total+=l2.length; }
     cur.setDate(cur.getDate()+1);
   }
-  $("cal-next7").innerHTML = soon.length ? block("clock","Die nächsten zwei Wochen","",
+  $("cal-next7").innerHTML = soon.length ? block("clock","Nächste Woche steht an",
+    '<span class="cnt">'+total+'</span>',
     soon.map(function(s){
       return '<div style="margin-bottom:10px"><div class="label" style="margin:12px 0 6px">'+fmt(s.iso)+'</div>'+
         '<ul class="list">'+s.list.map(agendaRow).join("")+'</ul></div>'; }).join("")) : "";
