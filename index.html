@@ -536,6 +536,7 @@ body.out{padding-bottom:0}
   <span class="label">Werkzeuge</span>
   <div class="mrow">
     <button class="btn sm" id="open-log">Änderungsverlauf</button>
+    <button class="btn sm" id="show-backups">Sicherungen</button>
   </div>
   <div class="mrow">
     <button class="btn sm" id="exp">Export</button>
@@ -1198,6 +1199,7 @@ function undo(entryId){
   render();
 }
 function renderLog(){
+  if(BACKUPS){ renderBackups(); return; }
   if(!DATA.log.length){ $("log-list").innerHTML='<div class="card">'+empty("hist","Noch keine Änderungen aufgezeichnet.")+'</div>'; return; }
   var byDay = {};
   DATA.log.forEach(function(e){ var d=(e.ts||"").slice(0,10); (byDay[d]=byDay[d]||[]).push(e); });
@@ -1544,12 +1546,15 @@ function handleClick(ev){
     return;
   }
   if(el.closest("#open-log")){ setMenu(false); go("log"); return; }
+  if(el.closest("#show-backups")){ setMenu(false); loadBackups(); return; }
   if(el.closest("#log-back")){ go("cal"); return; }
   if(el.closest("#log-clear")){
     if(confirm("Verlauf leeren? Rückgängig machen ist danach nicht mehr möglich.")){ DATA.log=[]; render(); }
     return;
   }
   if((h=el.closest("[data-undo]"))){ undo(h.dataset.undo); return; }
+  if((h=el.closest("[data-restore]"))){ restoreBackup(h.dataset.restore); return; }
+  if(el.closest("#back-log")){ BACKUPS=null; render(); return; }
 
   if(el.closest("#lightbg")){
     if((h=el.closest("[data-delpic]"))){
@@ -1731,6 +1736,62 @@ function setMenu(on){
     p.style.right=Math.max(12, window.innerWidth-r.right)+"px";
     p.style.left="auto"; p.style.bottom="auto";
   }
+}
+
+/* ===================== Sicherungen ===================== */
+var BACKUPS = null;
+function loadBackups(){
+  go("log");
+  if(!sb || !USER){ return; }
+  $("log-list").innerHTML = '<div class="card">'+empty("clock","Sicherungen werden geladen…")+'</div>';
+  sb.from("planner_backup").select("id,saved_at,saved_by,data")
+    .eq("planner_id", ROW_ID).order("saved_at",{ascending:false}).limit(40)
+    .then(function(res){
+      if(res.error){
+        $("log-list").innerHTML = '<div class="card"><p>Sicherungen nicht verfügbar: '+
+          esc(res.error.message)+'</p><p class="muted" style="margin-top:8px">'+
+          'Falls die Tabelle noch fehlt: backup-setup.sql im SQL Editor ausführen.</p></div>';
+        return;
+      }
+      BACKUPS = (res.data||[]).map(function(b){
+        return {id:b.id, at:b.saved_at, by:b.saved_by,
+                tasks:(b.data.tasks||[]).length, buys:(b.data.buys||[]).length,
+                spend:(b.data.spend||[]).length, events:(b.data.events||[]).length,
+                kb:Math.round(JSON.stringify(b.data).length/1024), data:b.data};
+      });
+      renderBackups();
+    });
+}
+function renderBackups(){
+  if(!BACKUPS) return;
+  var out = '<div class="btnrow" style="margin-top:14px">'+
+    '<button class="btn sm" id="back-log">Zurück zum Verlauf</button></div>';
+  if(!BACKUPS.length){
+    out += '<div class="card">'+empty("clock","Noch keine Sicherung vorhanden. Die erste entsteht bei der nächsten Änderung.")+'</div>';
+  }else{
+    out += block("clock","Automatische Sicherungen",'<span class="cnt">'+BACKUPS.length+'</span>',
+      '<ul class="list">'+BACKUPS.map(function(b){
+        var d = new Date(b.at);
+        var when = fmt(isoOf(d))+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
+        return '<li class="item pay"><div><div class="tt" style="cursor:default">'+when+'</div>'+
+          '<div class="tsub">'+b.tasks+' Aufgaben · '+b.buys+' Positionen · '+b.kb+' KB'+
+          (b.by?' · '+esc(shortMail(b.by)):'')+'</div></div>'+
+          '<div class="right"><button class="btn sm" data-restore="'+b.id+'">Zurückholen</button></div></li>';
+      }).join("")+'</ul>',
+      "Der Stand vor der jeweiligen Änderung. Zurückholen ersetzt den aktuellen Planer — der jetzige Stand wird dabei selbst gesichert.");
+  }
+  $("log-list").innerHTML = out;
+}
+function restoreBackup(id){
+  var b = null;
+  (BACKUPS||[]).forEach(function(x){ if(String(x.id)===String(id)) b = x; });
+  if(!b) return;
+  if(!confirm("Stand vom "+fmt(isoOf(new Date(b.at)))+" zurückholen?\n\n"+
+    b.tasks+" Aufgaben, "+b.buys+" Positionen.\n"+
+    "Der aktuelle Stand wird vorher automatisch gesichert.")) return;
+  DATA = migrate(clone(b.data));
+  render();
+  push().then(function(){ go("cal"); });
 }
 
 /* ===================== Export / Import ===================== */
@@ -1937,6 +1998,7 @@ window.addEventListener("beforeunload", function(e){ if(USER&&dirty()){ e.preven
   $("add-event").innerHTML = I("plus")+"Termin";
   $("add-spend").innerHTML = I("plus")+"Ausgabe";
   $("open-log").innerHTML = I("hist")+"Änderungsverlauf";
+  $("show-backups").innerHTML = I("undo")+"Sicherungen";
 
   var raw=ls("moove.supa");
   if(raw){ try{ var c=JSON.parse(raw);
