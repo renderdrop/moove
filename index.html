@@ -175,6 +175,7 @@ li.item.drop .thumb,li.item.drop .right{opacity:.4}
 .pill.late{color:var(--danger);border-color:#E7CFCD;background:var(--danger-soft)}
 .pill.soon{color:var(--amber);border-color:#EADFC4;background:var(--amber-soft)}
 .pill.wait{color:var(--amber);border-color:#EADFC4;background:var(--amber-soft)}
+.pill.later{color:var(--tob);border-color:#DAD4EA;background:var(--tob-soft)}
 .pill.click{cursor:pointer}
 .pill.click:hover{border-color:var(--ink3)}
 .pill.s0{color:var(--ink3)}
@@ -572,7 +573,7 @@ body.out{padding-bottom:0}
    SUPABASE — hier eintragen
    ======================================================================= */
 var SUPA_URL = "https://upzausewdoeadldfuyav.supabase.co";
-var SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVwemF1c2V3ZG9lYWRsZGZ1eWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNzMyNzcsImV4cCI6MjEwMDc0OTI3N30.Ok3X035Cs2lG0XR-fCaGLLN4pIP2ieD6XKhkuXaYjLo";
+var SUPA_KEY = "HIER_ANON_KEY_EINFUEGEN";
 var ROW_ID   = "umzug";
 /* ===================================================================== */
 
@@ -633,6 +634,7 @@ var OUTSTATUS = ["offen","inseriert","weg"];
 var STATES = ["offen","in Arbeit","erledigt"];
 var PAYERS = {"":"—", d:"Dijana", t:"Tobi", b:"beide"};
 var DECIDED=1, ORDERED=2, ARRIVED=3, DROPPED=4;
+function isLater(b){ return !!b.later && (+b.status||0)!==ARRIVED && (+b.status||0)!==DROPPED; }
 var TABS = [["cal","Kalender","cal"],["task","Aufgaben","check"],["room","Einrichtung","sofa"],
             ["shop","Einkauf","cart"],["cost","Kosten","euro"]];
 
@@ -668,7 +670,7 @@ function parseDE(t){
 function clone(o){ return JSON.parse(JSON.stringify(o)); }
 
 /* ===================== Zustand ===================== */
-var DATA = {v:9, tasks:[], buys:[], events:[], spend:[], photos:[], log:[]};
+var DATA = {v:10, tasks:[], buys:[], events:[], spend:[], photos:[], log:[]};
 var seq = 0;
 function uid(){ return "i"+(++seq)+Math.random().toString(36).slice(2,5); }
 
@@ -707,7 +709,8 @@ function migrate(d){
       return {id:uid(), title:e[0], start:e[1], end:e[2], kind:e[3], note:e[4]}; });
   }
   d.photos.forEach(function(p){ if(!p.id) p.id = uid(); });
-  d.v = 9;
+  d.buys.forEach(function(b){ if(b.later===undefined) b.later = false; });
+  d.v = 10;
   var seen = {};
   d.tasks.concat(d.buys, d.events, d.spend, d.photos).forEach(function(o){
     if(!o.id || seen[o.id]) o.id = uid();
@@ -795,8 +798,9 @@ function buyRow(b, compact){
     meta.push('<span class="ok t'+(b.okT?" on":"")+'" data-ok="t|'+b.id+'"><span class="av t">T</span>'+
       (b.okT?"einig":"offen")+'</span>');
   }
+  if(isLater(b)) meta.push('<span class="pill later">'+I("clock")+'später</span>');
   if(st===ORDERED && b.eta) meta.push('<span class="pill wait">'+I("truck")+'kommt '+fmt(b.eta)+'</span>');
-  else if(st<ORDERED && b.orderBy) meta.push(duePill(b.orderBy,""));
+  else if(st<ORDERED && b.orderBy && !isLater(b)) meta.push(duePill(b.orderBy,""));
   return '<li class="item buy'+(st===ARRIVED&&!out?" done":"")+(st===DROPPED?" drop":"")+'">'+
     '<div class="thumb" data-open="buy|'+b.id+'">'+thumb+'</div>'+
     '<div data-open="buy|'+b.id+'"><div class="tt">'+esc(b.name)+'</div>'+
@@ -816,7 +820,7 @@ function agenda(){
   });
   DATA.buys.forEach(function(b){
     if((+b.status||0)===DROPPED) return;
-    if(b.orderBy && (+b.status||0)<ORDERED)
+    if(b.orderBy && (+b.status||0)<ORDERED && !isLater(b))
       put(b.orderBy, {type:"order", id:b.id, open:"buy|"+b.id, txt:"Bestellen: "+b.name, sub:b.where||""});
     if(b.eta) put(b.eta, {type:"eta", id:b.id, open:"buy|"+b.id,
       txt:(b.kind==="out"?"Abholung: ":(b.mode===0?"Abholen: ":"Lieferung: "))+b.name, sub:b.where||""});
@@ -945,15 +949,16 @@ function renderTasks(){
 /* ===================== Einrichtung ===================== */
 function renderRooms(){
   var gets = DATA.buys.filter(function(b){ return b.kind!=="out" && matchQ(b.name+" "+(b.where||"")+" "+(b.note||"")); });
-  var n={all:gets.length,idea:0,split:0,fix:0};
+  var n={all:gets.length,idea:0,split:0,fix:0,later:0};
   gets.forEach(function(b){
     var s=+b.status||0;
     if(s===0) n.idea++;
     if(!!b.okD !== !!b.okT) n.split++;
-    if(s>=DECIDED && s!==DROPPED) n.fix++;
+    if(s>=DECIDED && s!==DROPPED && !isLater(b)) n.fix++;
+    if(isLater(b)) n.later++;
   });
   $("room-filters").innerHTML = [["all","Alle",n.all],["idea","Ideen",n.idea],
-    ["split","Uneinig",n.split],["fix","Entschieden",n.fix]].map(function(f){
+    ["split","Uneinig",n.split],["fix","Jetzt",n.fix],["later","Später",n.later]].map(function(f){
       return '<button class="chip" data-rf="'+f[0]+'" aria-pressed="'+(roomFilter===f[0])+'">'+
         f[1]+'<small>'+f[2]+'</small></button>'; }).join("");
 
@@ -961,7 +966,8 @@ function renderRooms(){
     var s=+b.status||0;
     if(roomFilter==="idea") return s===0;
     if(roomFilter==="split") return !!b.okD !== !!b.okT;
-    if(roomFilter==="fix") return s>=DECIDED && s!==DROPPED;
+    if(roomFilter==="fix") return s>=DECIDED && s!==DROPPED && !isLater(b);
+    if(roomFilter==="later") return isLater(b);
     return true;
   });
   var out="";
@@ -969,17 +975,21 @@ function renderRooms(){
     var l = list.filter(function(b){ return b.room===r; });
     if(!l.length) return;
     var all = DATA.buys.filter(function(b){ return b.room===r && b.kind!=="out" && (+b.status||0)!==DROPPED; });
-    var sum = all.reduce(function(a,b){ return a+eff(b); },0);
-    var fix = all.filter(function(b){ return (+b.status||0)>=DECIDED; });
+    var now = all.filter(function(b){ return !isLater(b); });
+    var later = all.filter(isLater);
+    var sum = now.reduce(function(a,b){ return a+eff(b); },0);
+    var fix = now.filter(function(b){ return (+b.status||0)>=DECIDED; });
     var fixSum = fix.reduce(function(a,b){ return a+eff(b); },0);
+    var laterSum = later.reduce(function(a,b){ return a+eff(b); },0);
     var pics = (DATA.photos||[]).filter(function(p){ return p.room===r; });
     out += block(ROOMIC[r]||"box", r,
-      ring(all.length ? fix.length/all.length : 0) + '<span class="sum">'+eur(fixSum)+' / '+eur(sum)+'</span>',
+      ring(now.length ? fix.length/now.length : 0) + '<span class="sum">'+eur(fixSum)+' / '+eur(sum)+
+      (laterSum?' <span class="muted">+'+eur(laterSum)+' später</span>':'')+'</span>',
       '<div class="gal">'+pics.map(function(p){
           return '<div class="ph"><img src="'+p.src+'" data-light="'+p.id+'" alt=""></div>'; }).join("")+
         '<div class="add" data-addpic="'+esc(r)+'">'+I("camera")+'Bild</div></div>'+
       '<ul class="list">'+l.map(function(b){ return buyRow(b,false); }).join("")+'</ul>',
-      fix.length+" von "+all.length+" entschieden");
+      fix.length+" von "+now.length+" entschieden"+(later.length?" · "+later.length+" auf später":""));
   });
   var outs = DATA.buys.filter(function(b){ return b.kind==="out" && matchQ(b.name); });
   if(outs.length && roomFilter==="all"){
@@ -996,20 +1006,23 @@ function renderShop(){
   var src = DATA.buys.filter(function(b){
     var s=+b.status||0;
     if(b.kind==="out" || s===DROPPED || s===ARRIVED) return false;
+    if(shopFilter==="later") return isLater(b);
+    if(isLater(b)) return false;
     if(shopFilter==="todo") return s>=DECIDED;
     if(shopFilter==="pick") return s>=DECIDED && b.mode===0;
     if(shopFilter==="ship") return s>=DECIDED && b.mode===1;
     return true;
   }).filter(function(b){ return matchQ(b.name+" "+(b.where||"")); });
-  var n={todo:0,pick:0,ship:0,all:0};
+  var n={todo:0,pick:0,ship:0,all:0,later:0};
   DATA.buys.forEach(function(b){
     var s=+b.status||0;
     if(b.kind==="out"||s===DROPPED||s===ARRIVED) return;
+    if(isLater(b)){ n.later++; return; }
     n.all++;
     if(s>=DECIDED){ n.todo++; if(b.mode===0) n.pick++; if(b.mode===1) n.ship++; }
   });
   $("shop-filters").innerHTML = [["todo","Zu besorgen",n.todo],["pick","Abholen",n.pick],
-    ["ship","Bestellen",n.ship],["all","Auch Ideen",n.all]].map(function(f){
+    ["ship","Bestellen",n.ship],["all","Auch Ideen",n.all],["later","Später",n.later]].map(function(f){
       return '<button class="chip" data-sf="'+f[0]+'" aria-pressed="'+(shopFilter===f[0])+'">'+
         f[1]+'<small>'+f[2]+'</small></button>'; }).join("");
 
@@ -1041,7 +1054,10 @@ function renderShop(){
 function renderCost(){
   var mn=0,mx=0;
   DATA.tasks.forEach(function(t){ mn+=(+t.min||0); mx+=(+t.max||+t.min||0); });
-  var live=DATA.buys.filter(function(b){ return b.kind!=="out" && (+b.status||0)!==DROPPED; });
+  var alive=DATA.buys.filter(function(b){ return b.kind!=="out" && (+b.status||0)!==DROPPED; });
+  var laterList=alive.filter(isLater);
+  var laterSum=laterList.reduce(function(a,b){ return a+eff(b); },0);
+  var live=alive.filter(function(b){ return !isLater(b); });
   var buy=live.reduce(function(a,b){ return a+eff(b); },0);
   var fix=live.filter(function(b){ return (+b.status||0)>=DECIDED; });
   var buyFix=fix.reduce(function(a,b){ return a+eff(b); },0);
@@ -1058,10 +1074,10 @@ function renderCost(){
   });
 
   $("cost-kpis").innerHTML =
-    kpi("Geplant gesamt", range(mn+buy-erl, mx+buy-erl)) +
+    kpi("Jetzt zum Umzug", range(mn+buy-erl, mx+buy-erl)) +
     kpi("Davon entschieden", eur(mn+buyFix)) +
     kpi("Schon bezahlt", eur(paid)) +
-    kpi("Noch offen", eur(Math.max(0,(mx||mn)+buy-erl-paid)));
+    kpi("Auf später verschoben", eur(laterSum));
 
   var rows='<tr><td><b>Umzug</b></td><td class="n">'+((mn||mx)?range(mn,mx):"—")+'</td></tr>';
   Object.keys(CATS).forEach(function(k){
@@ -1078,7 +1094,17 @@ function renderCost(){
       eur(l.reduce(function(a,b){ return a+eff(b); },0))+'</td></tr>';
   });
   if(erl) rows += '<tr><td>Erlöse aus Verkäufen</td><td class="n">− '+eur(erl)+'</td></tr>';
-  rows += '<tr class="big"><td>Gesamt</td><td class="n">'+range(mn+buy-erl,mx+buy-erl)+'</td></tr>';
+  rows += '<tr class="big"><td>Jetzt zum Umzug</td><td class="n">'+range(mn+buy-erl,mx+buy-erl)+'</td></tr>';
+  if(laterSum){
+    rows += '<tr><td style="padding-top:14px"><b>Später</b> <span class="muted">— '+laterList.length+
+      ' '+(laterList.length===1?'Position, fällt':'Positionen, fallen')+' nach dem Umzug an</span></td><td class="n" style="padding-top:14px">'+eur(laterSum)+'</td></tr>';
+    var byRoom={};
+    laterList.forEach(function(b){ byRoom[b.room]=(byRoom[b.room]||0)+eff(b); });
+    Object.keys(byRoom).forEach(function(r){
+      rows += '<tr class="sub"><td>'+esc(r)+'</td><td class="n">'+eur(byRoom[r])+'</td></tr>'; });
+    rows += '<tr class="big"><td>Alles zusammen</td><td class="n">'+
+      range(mn+buy-erl+laterSum, mx+buy-erl+laterSum)+'</td></tr>';
+  }
   $("cost-table").innerHTML = rows;
 
   $("cost-paid").innerHTML = pay.length
@@ -1102,7 +1128,7 @@ var LABELS = {title:"Titel", name:"Name", note:"Notiz", due:"Termin", dateText:"
   state:"Status", who:"Zuständig", wait:"Wartet auf", cat:"Bereich", min:"Budget von", max:"Budget bis",
   actual:"Bezahlt", payer:"Zahler", price:"Preis", alt:"Alternativpreis", where:"Laden", link:"Link",
   img:"Bild", room:"Raum", mode:"Beschaffung", status:"Status", orderBy:"Bestellfrist", eta:"Liefertermin",
-  okD:"Dijana einig", okT:"Tobi einig", start:"Von", end:"Bis", kind:"Art", amount:"Betrag",
+  okD:"Dijana einig", okT:"Tobi einig", later:"Kaufzeitpunkt", start:"Von", end:"Bis", kind:"Art", amount:"Betrag",
   what:"Wofür", date:"Datum", src:"Bild"};
 var TYPEN = {tasks:"Aufgabe", buys:"Position", events:"Termin", spend:"Ausgabe", photos:"Bild"};
 
@@ -1287,6 +1313,13 @@ function renderSheet(){
       '<span class="av t">T</span>'+(FORM.okT?"Tobi ist dafür":"Tobi offen")+'</button></div>');
     h += '<div class="fld2">'+fld(out?"Erlös €":"Preis €", inp("price","number"))+
          fld("Raum", sel("room", ROOMS.concat([OUTROOM]).map(function(r){ return [r,r]; })))+'</div>';
+    if(!out) h += fld("Wann kaufen?",
+      '<div class="seg"><button data-seg="later|0" class="'+(FORM.later?"":"on")+'">'+
+      I("cart")+'Jetzt zum Umzug</button>'+
+      '<button data-seg="later|1" class="'+(FORM.later?"on":"")+'">'+
+      I("clock")+'Später</button></div>'+
+      (FORM.later?'<div class="note" style="margin-top:8px">Wird in den Kosten getrennt ausgewiesen und '+
+        'taucht nicht in der Einkaufsliste auf.</div>':''));
     h += fld(out?"Weg":"Laden / Quelle", out
       ? seg("mode", +FORM.mode||0, [[0,"Verkaufen"],[1,"Verschenken"],[2,"Wertstoffhof"]])
       : inp("where","Ikea, Sklum, Baumarkt …"));
@@ -1494,7 +1527,7 @@ function handleClick(ev){
   if((h=el.closest("[data-more]"))){ SHMORE=!SHMORE; renderSheet(); return; }
   if((h=el.closest("[data-seg]"))){
     var s=h.dataset.seg.split("|"), v=s[1];
-    FORM[s[0]] = (s[0]==="okD"||s[0]==="okT") ? (v==="1")
+    FORM[s[0]] = (s[0]==="okD"||s[0]==="okT"||s[0]==="later") ? (v==="1")
       : (/^\d+$/.test(v) && ["state","status","mode"].indexOf(s[0])>=0) ? +v : v;
     renderSheet(); return;
   }
@@ -1519,7 +1552,7 @@ function handleClick(ev){
   if(el.closest("#add-buy")){
     var id2=uid();
     DATA.buys.push({id:id2,room:ROOMS[0],name:"Neue Position",note:"",price:0,alt:0,where:"",
-      link:"",img:"",mode:1,status:0,kind:"get",orderBy:"",eta:"",okD:false,okT:false,actual:0,payer:""});
+      link:"",img:"",mode:1,status:0,kind:"get",orderBy:"",eta:"",okD:false,okT:false,later:false,actual:0,payer:""});
     roomFilter="all"; render(); openSheet("buy",id2); return;
   }
   if(el.closest("#add-event")){
