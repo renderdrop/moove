@@ -573,8 +573,9 @@ body.out{padding-bottom:0}
    SUPABASE — hier eintragen
    ======================================================================= */
 var SUPA_URL = "https://upzausewdoeadldfuyav.supabase.co";
-var SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVwemF1c2V3ZG9lYWRsZGZ1eWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNzMyNzcsImV4cCI6MjEwMDc0OTI3N30.Ok3X035Cs2lG0XR-fCaGLLN4pIP2ieD6XKhkuXaYjLo";
+var SUPA_KEY = "HIER_ANON_KEY_EINFUEGEN";
 var ROW_ID   = "umzug";
+var BUCKET   = "moove";
 /* ===================================================================== */
 
 /* ===================== Icons ===================== */
@@ -785,8 +786,7 @@ function buyRow(b, compact){
   else if(out) money = (+b.price)?'<span class="money plus">+'+eur(b.price)+'</span>':'<span class="money free">offen</span>';
   else money = (+b.price)?'<span class="money">'+eur(b.price)+'</span>'
     : (+b.alt)?'<span class="money alt">'+eur(b.alt)+'</span>':'<span class="money free">offen</span>';
-  var thumb = b.img ? '<img src="'+esc(b.img)+'" alt="" loading="lazy" onerror="this.style.display=\'none\'">'
-    : I("image");
+  var thumb = b.img ? imgTag(b.img) : I("image");
   var sub = [];
   if(b.where && b.where!=="offen") sub.push(esc(b.where));
   sub.push(M[b.mode]);
@@ -986,7 +986,7 @@ function renderRooms(){
       ring(now.length ? fix.length/now.length : 0) + '<span class="sum">'+eur(fixSum)+' / '+eur(sum)+
       (laterSum?' <span class="muted">+'+eur(laterSum)+' später</span>':'')+'</span>',
       '<div class="gal">'+pics.map(function(p){
-          return '<div class="ph"><img src="'+p.src+'" data-light="'+p.id+'" alt=""></div>'; }).join("")+
+          return '<div class="ph">'+imgTag(p.src).replace("<img ","<img data-light=\""+p.id+"\" ")+'</div>'; }).join("")+
         '<div class="add" data-addpic="'+esc(r)+'">'+I("camera")+'Bild</div></div>'+
       '<ul class="list">'+l.map(function(b){ return buyRow(b,false); }).join("")+'</ul>',
       fix.length+" von "+now.length+" entschieden"+(later.length?" · "+later.length+" auf später":""));
@@ -1295,7 +1295,7 @@ function renderSheet(){
     var out = FORM.kind==="out";
     $("sh-title").textContent = out ? "Möbelstück abgeben" : "Einrichtung";
     h += '<div class="picrow"><div class="picbox">'+
-      (FORM.img?'<img src="'+esc(FORM.img)+'" alt="">':I("image"))+'</div>'+
+      (FORM.img?imgTag(FORM.img):I("image"))+'</div>'+
       '<div style="flex:1;display:flex;flex-direction:column;gap:7px">'+
       '<button class="btn sm" data-pic="form">'+I("camera")+'Bild wählen</button>'+
       (FORM.link?'<button class="btn sm" data-pic="link">'+I("image")+'Vom Link holen</button>':'')+
@@ -1406,6 +1406,106 @@ function shrink(file, cb){
   r.readAsDataURL(file);
 }
 
+/* ===================== Bilder im Storage ===================== */
+var SIGNED = {};          // Pfad -> {url, exp}   frisch signierte Links
+var UPLOADING = 0;
+
+function isStored(v){ return typeof v==="string" && v.indexOf("moove:")===0; }
+function pathOf(v){ return String(v).slice(6); }
+
+/* Wandelt einen data:-String in einen Blob, ohne Umweg über den Server. */
+function dataToBlob(d){
+  var m = /^data:([^;]+);base64,(.*)$/.exec(d);
+  if(!m) return null;
+  var bin = atob(m[2]), arr = new Uint8Array(bin.length);
+  for(var i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], {type:m[1]});
+}
+
+/* Lädt ein Bild hoch und gibt "moove:pfad" zurück. */
+function upload(dataUrl){
+  if(!sb || !sb.storage || !USER) return Promise.resolve(dataUrl);
+  var blob = dataToBlob(dataUrl);
+  if(!blob) return Promise.resolve(dataUrl);
+  var name = Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8)+".jpg";
+  UPLOADING++;
+  setState("Bild lädt…","warn");
+  return sb.storage.from(BUCKET).upload(name, blob, {contentType:"image/jpeg", upsert:false})
+    .then(function(res){
+      UPLOADING--;
+      if(res.error) throw res.error;
+      return "moove:"+name;
+    })
+    .catch(function(e){
+      UPLOADING--;
+      console.warn("Upload fehlgeschlagen:", e.message||e);
+      return dataUrl;                       // Rückfall: Bild bleibt in den Daten
+    });
+}
+function removeStored(v){
+  if(!sb || !sb.storage || !USER || !isStored(v)) return;
+  sb.storage.from(BUCKET).remove([pathOf(v)]).catch(function(){});
+}
+
+/* Signierte Links besorgen und die <img>-Elemente nachträglich füllen. */
+function refreshImages(){
+  if(!sb || !sb.storage || !USER) return;
+  var need = {};
+  [].forEach.call(document.querySelectorAll("img[data-src]"), function(el){
+    var p = el.getAttribute("data-src");
+    if(!isStored(p)) return;
+    var key = pathOf(p), c = SIGNED[key];
+    if(c && c.exp > Date.now()){ if(el.src !== c.url) el.src = c.url; }
+    else need[key] = 1;
+  });
+  var list = Object.keys(need);
+  if(!list.length) return;
+  sb.storage.from(BUCKET).createSignedUrls(list, 3600).then(function(res){
+    if(res.error || !res.data) return;
+    res.data.forEach(function(r){
+      if(!r.signedUrl) return;
+      SIGNED[r.path] = {url:r.signedUrl, exp:Date.now()+50*60*1000};
+    });
+    [].forEach.call(document.querySelectorAll("img[data-src]"), function(el){
+      var c = SIGNED[pathOf(el.getAttribute("data-src"))];
+      if(c) el.src = c.url;
+    });
+  });
+}
+/* Liefert das, was direkt ins src-Attribut darf. */
+function imgSrc(v){
+  if(!v) return "";
+  if(isStored(v)){ var c = SIGNED[pathOf(v)]; return c && c.exp>Date.now() ? c.url : ""; }
+  return v;
+}
+function imgTag(v, cls){
+  if(!v) return "";
+  return '<img '+(cls?'class="'+cls+'" ':'')+'src="'+esc(imgSrc(v))+'" data-src="'+esc(v)+'" '+
+    'alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'">';
+}
+
+/* Verschiebt eingebettete Bilder nachträglich in den Storage. */
+function migrateImages(){
+  if(!sb || !sb.storage || !USER) return;
+  var jobs = [];
+  DATA.photos.forEach(function(p){
+    if(p.src && p.src.indexOf("data:")===0)
+      jobs.push(upload(p.src).then(function(v){ if(isStored(v)) p.src = v; }));
+  });
+  DATA.buys.forEach(function(b){
+    if(b.img && b.img.indexOf("data:")===0)
+      jobs.push(upload(b.img).then(function(v){ if(isStored(v)) b.img = v; }));
+  });
+  if(!jobs.length) return;
+  info("Verschiebe "+jobs.length+" Bilder in den Speicher…");
+  Promise.all(jobs).then(function(){
+    render();
+    push().then(function(){
+      info("Bilder ausgelagert. Datenstand jetzt "+Math.round(JSON.stringify(DATA).length/1024)+" KB.");
+    });
+  });
+}
+
 /* ===================== Kopf / Render ===================== */
 function renderHead(){
   var t0=todayISO();
@@ -1426,6 +1526,7 @@ function render(){
   if(TAB==="cost") renderCost();
   if(TAB==="log") renderLog();
   if(SHEET) renderSheet();
+  if(typeof refreshImages==="function") refreshImages();
   if(typeof syncCheck==="function") syncCheck();
 }
 
@@ -1452,6 +1553,8 @@ function handleClick(ev){
 
   if(el.closest("#lightbg")){
     if((h=el.closest("[data-delpic]"))){
+      var gone = find(DATA.photos, h.dataset.delpic);
+      if(gone) removeStored(gone.src);
       DATA.photos = DATA.photos.filter(function(p){ return p.id!==h.dataset.delpic; });
       LIGHT=null; $("lightbg").hidden=true; render(); return;
     }
@@ -1460,7 +1563,7 @@ function handleClick(ev){
   if((h=el.closest("[data-light]"))){
     var p=find(DATA.photos,h.dataset.light); if(!p) return;
     LIGHT=p.id;
-    $("lightbg").innerHTML = '<img src="'+p.src+'" alt="">'+
+    $("lightbg").innerHTML = imgTag(p.src)+
       '<div class="btnrow"><button class="btn sm warn" data-delpic="'+p.id+'">'+I("trash")+'Bild löschen</button>'+
       '<button class="btn sm">Schließen</button></div>';
     $("lightbg").hidden=false; return;
@@ -1469,7 +1572,7 @@ function handleClick(ev){
   if((h=el.closest("[data-pic]"))){
     var m=h.dataset.pic;
     if(m==="form"){ PICTARGET={kind:"form"}; $("picfile").click(); }
-    if(m==="clear"){ FORM.img=""; renderSheet(); }
+    if(m==="clear"){ removeStored(FORM.img); FORM.img=""; renderSheet(); }
     if(m==="link" && FORM.link){
       h.textContent="lädt…";
       fetch("https://api.microlink.io/?url="+encodeURIComponent(FORM.link))
@@ -1587,13 +1690,21 @@ $("picfile").addEventListener("change", function(e){
   var f=e.target.files && e.target.files[0];
   e.target.value="";
   if(!f || !PICTARGET) return;
+  var target = PICTARGET;
+  PICTARGET = null;
   shrink(f, function(url){
     if(!url) return;
     var before=snapshot();
-    if(PICTARGET.kind==="form" && FORM){ FORM.img=url; renderSheet(); }
-    else { DATA.photos.push({id:uid(), room:PICTARGET.room, src:url}); render(); }
+    var tmp;
+    if(target.kind==="form" && FORM){ FORM.img=url; renderSheet(); }
+    else { tmp = {id:uid(), room:target.room, src:url}; DATA.photos.push(tmp); render(); }
     commit(before);
-    PICTARGET=null;
+    upload(url).then(function(v){
+      if(!isStored(v)) return;
+      if(target.kind==="form"){ if(FORM && FORM.img===url){ FORM.img=v; renderSheet(); } }
+      else if(tmp){ tmp.src=v; render(); }
+      scheduleSave();
+    });
   });
 });
 document.addEventListener("keydown", function(e){
@@ -1686,14 +1797,41 @@ function pull(){
     .then(function(res){ if(res.error) throw res.error; apply(res.data,true); })
     .catch(function(e){ setState("Fehler","bad"); info("Laden fehlgeschlagen: "+(e.message||e)); });
 }
+/* Prüft, ob eine empfangene Fassung überhaupt brauchbar ist.
+   Realtime kürzt Nachrichten über 1 MB und liefert dann ein leeres data-Feld —
+   das darf niemals den lokalen Stand überschreiben. */
+function usable(row){
+  var d = row && row.data;
+  if(!d || typeof d!=="object" || Array.isArray(d)) return false;
+  if(!Array.isArray(d.tasks) || !Array.isArray(d.buys)) return false;
+  return true;
+}
+function countOf(d){ return (d.tasks||[]).length + (d.buys||[]).length +
+  (d.events||[]).length + (d.spend||[]).length; }
+
 function apply(row,force){
+  if(!usable(row)){
+    setState("unvollständig","bad");
+    info("Vom Server kam eine unvollständige Fassung — sie wurde verworfen, euer Stand bleibt unverändert. "+
+         "Häufigste Ursache: die Daten sind zu groß für die Live-Übertragung. \u201eNeu laden\u201c holt den vollen Stand.");
+    return;
+  }
   if(!force && dirty()){
     setState("Konflikt","warn");
     info("Neuere Fassung von "+shortMail(row.updated_by)+" ("+hhmm(row.updated_at)+
          "). Ihr habt ungespeicherte Änderungen — \u201eNeu laden\u201c \u00fcbernimmt die andere, \u201eJetzt speichern\u201c eure.");
     return;
   }
-  DATA=migrate(row.data||{});
+  var next = migrate(clone(row.data));
+  var before = countOf(DATA), after = countOf(next);
+  if(before > 20 && after < before*0.5 && !force){
+    setState("Rückfrage","warn");
+    info("Die empfangene Fassung enthält nur noch "+after+" statt "+before+" Einträge. "+
+         "Sie wurde nicht übernommen. Prüft im Verlauf, ob jemand etwas gelöscht hat, "+
+         "und holt sie bei Bedarf mit \u201eNeu laden\u201c.");
+    return;
+  }
+  DATA = next;
   render(); LAST=JSON.stringify(DATA);
   setState("synchron","ok");
   $("sy-title").textContent="Angemeldet als "+shortMail(USER.email);
@@ -1702,6 +1840,12 @@ function apply(row,force){
 }
 function push(){
   if(!sb||!USER||busy) return Promise.resolve();
+  if(LAST!==null && countOf(DATA)===0 && countOf(JSON.parse(LAST))>0){
+    setState("nicht gespeichert","bad");
+    info("Der Planer ist plötzlich leer — das Speichern wurde gestoppt, damit der Serverstand erhalten bleibt. "+
+         "Lade die Seite neu.");
+    return Promise.resolve();
+  }
   busy=true; setState("speichert…","warn");
   DATA.seq=seq;
   MYREV=Math.random().toString(36).slice(2)+Date.now().toString(36);
@@ -1710,8 +1854,14 @@ function push(){
     .then(function(res){
       if(res.error) throw res.error;
       LAST=JSON.stringify(DATA);
+      var kb = Math.round(LAST.length/1024);
       setState("synchron","ok");
-      info("Zuletzt geändert von "+shortMail(USER.email)+" um "+hhmm()+".");
+      var nImg = DATA.photos.filter(function(p){ return isStored(p.src); }).length +
+                 DATA.buys.filter(function(b){ return isStored(b.img); }).length;
+      info("Zuletzt geändert von "+shortMail(USER.email)+" um "+hhmm()+". Datenstand "+kb+" KB"+
+        (nImg ? ", "+nImg+" Bilder ausgelagert" : "")+
+        (kb>700 ? " — nahe der Grenze von 1024 KB für die Live-Übertragung." : "")+".");
+      if(kb>700) setState("groß: "+kb+" KB","warn");
     })
     .catch(function(e){ setState("Fehler","bad"); info("Speichern fehlgeschlagen: "+(e.message||e)); })
     .then(function(){ busy=false; });
@@ -1726,6 +1876,7 @@ function syncCheck(){
   if(!sb||!USER||LAST===null) return;
   if(JSON.stringify(DATA)!==LAST) scheduleSave();
 }
+setInterval(function(){ if(USER) refreshImages(); }, 15*60*1000);
 function listen(){
   sb.channel("planner-"+ROW_ID)
     .on("postgres_changes",{event:"UPDATE",schema:"public",table:"planner",filter:"id=eq."+ROW_ID},
@@ -1735,12 +1886,13 @@ function listen(){
 function onLogin(session){
   USER=session.user; gate(true); amsg("");
   $("sy-title").textContent="Angemeldet als "+shortMail(USER.email);
-  pull().then(listen);
+  pull().then(function(){ listen(); migrateImages(); });
 }
 function onLogout(){
   USER=null; LAST=null; MYREV=null;
   DATA=migrate({}); clearTimeout(saveTimer);
   if(sb) sb.removeAllChannels();
+  SIGNED = {};
   setMenu(false); gate(false); setState("–");
 }
 $("au-cfg-save").addEventListener("click", function(){
